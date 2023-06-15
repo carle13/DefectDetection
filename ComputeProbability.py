@@ -13,13 +13,13 @@ inDir = os.path.join(sys.argv[1], '')
 
 def readQ(input_file):
     pos_tmp=np.genfromtxt(input_file,skip_header=9)
-    q_tmp=pos_tmp[:,6:]
+    q_tmp=pos_tmp[:,6:13]
     return q_tmp
 
 categories = []
 testStructure = []
 numDirs = 0
-X = np.empty((0,14))
+X = np.empty((0,7))
 for base, dirs, files in os.walk('0_Database/QValues/'):
     numDirs += len(dirs)
     for directories in dirs:
@@ -29,6 +29,11 @@ for base, dirs, files in os.walk('0_Database/QValues/'):
             continue
         for input_file in list_file:
             X = np.append(X, readQ(input_file), axis=0)
+            if 'Dislo' in input_file:
+                X = np.append(X, readQ(input_file), axis=0)
+                X = np.append(X, readQ(input_file), axis=0)
+                X = np.append(X, readQ(input_file), axis=0)
+                X = np.append(X, readQ(input_file), axis=0)
         testStructure.append(readQ(list_file[0]))
         categories.append(directories)
     
@@ -82,12 +87,14 @@ def computeProbabilityPerAtom(input_file):
     print(output_file)
     # Read q values from input files
     pos=np.genfromtxt(input_file,skip_header=9)
-    q=pos[:,6:]
+    q=pos[:,6:13]
     # Predict probabilities for all atoms in the system
-    try:
-        probs = model.predict_proba(q)
-    except:
-        return
+    probs = model.predict_proba(q)
+    # try:
+    #     probs = model.predict_proba(q)
+    # except:
+    #     print('Error when predicting structures')
+    #     return
 
     # Start writing to output file
     os.system("head -n 8 "+input_file+"  > "+output_file)
