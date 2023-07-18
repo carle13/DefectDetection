@@ -1,0 +1,73 @@
+#!/usr/bin/lammps
+  
+variable up equal 1.0e-6
+variable zlo_strain equal 7.5 # low bound for slabs fixed 
+variable zhi_strain equal 83.5 # high bound for slabs fixed
+
+variable nb_step universe 1250
+
+variable temp equal 500
+
+# metal units, elastic constants in GPa
+units           metal
+
+# Define minimization parameters
+variable etol equal 0.0
+variable ftol equal 1.0e-10
+variable maxiter equal 10000
+variable maxeval equal 10000
+variable dmax equal 1.0e-2
+variable maxiter_sd equal 100
+
+atom_style      charge
+boundary        p p p
+
+read_data       Init.lmp
+#read_restart	dump_restart.1500000
+
+region FixedZoneReg_up block INF INF INF INF ${zhi_strain} INF
+group FixedZone_up region FixedZoneReg_up
+
+region FixedZoneReg_down block INF INF INF INF INF ${zlo_strain}
+group FixedZone_down region FixedZoneReg_down
+
+group ForMD subtract all FixedZone_down FixedZone_up
+
+compute         pe all pe/atom
+compute         s all stress/atom NULL
+
+### OUTPUT
+### Output thermodynamics info in out file every N steps
+thermo          100
+thermo_style    custom step time temp press pe enthalpy etotal vol lx ly lz pxx pyy pzz pxy pxz pyz
+thermo_modify   norm no
+
+dump            1 all custom 100 MD_*.xsf id type element xu yu zu q c_pe c_s[1] c_s[2] c_s[3] c_s[4] c_s[5] c_s[6]
+dump_modify     1 sort id element Mg Si O
+
+include         Mg2SiO4.pot
+
+pair_modify     table 0
+
+fix 1 FixedZone_up setforce 0 0 0
+fix 2 FixedZone_down setforce 0 0 0 
+
+min_style       cg
+minimize ${etol} ${ftol} ${maxiter} ${maxeval}
+
+velocity        ForMD create ${temp} 5862775 dist gaussian
+
+fix             Thermostat ForMD nvt temp ${temp} ${temp} $(10.0*dt) drag 1.0
+timestep 1e-4
+run 5000
+
+#restart 10000 dump_restart
+
+fix             Thermostat2 ForMD nvt temp ${temp} ${temp} $(10.0*dt) drag 1.0
+timestep 1e-3
+run 10000
+
+#min_style       cg
+#minimize ${etol} ${ftol} ${maxiter} ${maxeval}
+
+

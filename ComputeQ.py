@@ -13,7 +13,7 @@ import sys
 inDir = os.path.join(sys.argv[1], '')
 
 #List of q parameters to be computed
-qOrders = [2,3,4,5,6,7,8]
+qOrders = [2,3,4,5,6,7,8,9,10,11,12]
 
 #   1 ---- Mg
 #   2 ---- Si
@@ -34,7 +34,7 @@ def computeQ(input_file):
     print('computing q all')
     sys = pc.System()
     sys.read_inputfile(input_file)
-    sys.find_neighbors(method='voronoi')
+    sys.find_neighbors(method='cutoff', cutoff=8)
     sys.calculate_q(qOrders, averaged=True)
     q = sys.get_qvals(qOrders, averaged=True)
     q=np.array(q)
@@ -72,7 +72,7 @@ def computeQ(input_file):
     # b3 = 0 #Counter for Ox
     pos=np.genfromtxt(input_file,skip_header=9)
     os.system("head -n 8 "+input_file+"  > "+output_file)
-    os.system("echo  'ITEM: ATOMS id type x y z q2 q3 q4 q5 q6 q7 q8' >> "+output_file)
+    os.system("echo  'ITEM: ATOMS id type x y z q2 q3 q4 q5 q6 q7 q8 q9 q10 q11 q12' >> "+output_file)
     # os.system("echo  'ITEM: ATOMS id type x y z q2 q3 q4 q5 q6 q7 q8 q2_mono q3_mono q4_mono q5_mono q6_mono q7_mono q8_mono' >> "+output_file)
     with open(output_file,'a') as fw:
         for i in np.arange(int(np.size(pos[:,0]))):
