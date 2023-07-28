@@ -162,3 +162,7 @@ cython_debug/
 
 #Do not include pyscal installation
 pyscal
+
+#Do not include analyzed files
+*.Q.trj
+*.PROB.trj

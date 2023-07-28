@@ -1,9 +1,9 @@
 import os
 import glob
 
-directory = 'Input/DisloA/*.xsf'
-indices = 'DisloA.indices'
-output = 'QValues'
+directory = 'Input/DisloC/*.xsf'
+indices = 'DisloC.indices'
+output = 'QValuesNonAverage'
 
 executable = '/home/umet/Software/AtomHIC/build/bin/GetSteinhardt'
 
@@ -14,4 +14,4 @@ for f in list_file:
     if os.path.exists(f.replace('Input', output)):
         print(f.replace('Input', output), '   Skipped')
         continue
-    os.system(executable+' '+f+' 1 '+indices+' DisloA Forsterite '+f.replace('Input', output)+' Multi Multi')
+    os.system(executable+' '+f+' 1 '+indices+' DisloC Forsterite '+f.replace('Input', output)+' Multi none')

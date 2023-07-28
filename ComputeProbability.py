@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-from joblib import Parallel, delayed
 import numpy as np
 import glob
 import os
@@ -8,6 +7,7 @@ import os.path
 import sys
 from sklearn.mixture import GaussianMixture as GM
 from sklearn.model_selection import GridSearchCV
+import re
 
 #python3 ComputeProbability.py 2_Relaxation/
 inDir = os.path.join(sys.argv[1], '')
@@ -25,10 +25,6 @@ class Tee(object):
         for f in self.files:
             f.flush()
 
-if not os.path.exists('0_GMModel/Cutoff/training.out'):
-    os.makedirs('0_GMModel/Cutoff/', exist_ok=True)
-    f = open('0_GMModel/Cutoff/training.out', 'w')
-    sys.stdout = Tee(sys.stdout, f)
 
 #   1 ---- Mg
 #   2 ---- Si
@@ -46,101 +42,188 @@ def readQ(input_file, startCol=6):
 
 
 def gmm_bic_score(estimator, X):
-    return -estimator.aic(X)
-
-param_grid = {"n_components": range(4, 10),}
+    return -estimator.bic(X)
 
 
-categories = []
-testStructure = []
-numDirs = 0
-MgStructs = []
-SiStructs = []
-OxStructs = []
-XMg = np.empty((0,20))
-XSi = np.empty((0,20))
-XOx = np.empty((0,20))
-for base, dirs, files in os.walk('0_Database/QSelectedReduced/'):
-    numDirs += len(dirs)
-    for directories in dirs:
-        list_file = sorted(glob.glob(base+directories+"/*Q.trj"))
-        if len(list_file) == 0:
-            numDirs -= 1
-            continue
-        MgStructs.append(np.empty((0,20)))
-        SiStructs.append(np.empty((0,20)))
-        OxStructs.append(np.empty((0,20)))
-        for input_file in list_file:
-            qmg, qsi, qox = readQ(input_file)
-            XMg = np.append(XMg, qmg, axis=0)
-            XSi = np.append(XSi, qsi, axis=0)
-            XOx = np.append(XOx, qox, axis=0)
-            MgStructs[-1] = np.append(MgStructs[-1], qmg, axis=0)
-            SiStructs[-1] = np.append(SiStructs[-1], qsi, axis=0)
-            OxStructs[-1] = np.append(OxStructs[-1], qox, axis=0)
-            #if 'Dislo' in input_file:
-            #print('including more times the dislocations')
-            for repeat in range(4):
+dirModel = '0_GMModel/Average/'
+os.makedirs(dirModel, exist_ok=True)
+
+#Find out whether previous training was successful
+trained = False
+if os.path.exists(dirModel+"training.out"):
+    text_file = open(dirModel+"training.out", "r")
+    for line in text_file:
+        if re.search('All clusters have been properly recognized', line):
+            trained = True
+            print('Reading previously trained model')
+            print()
+    text_file.close()
+
+# If model does not exist or training was not successful then train new model
+if not trained:
+    print('Training new model')
+    print()
+    #Write training output to output file
+    f = open(dirModel+'training.out', 'w')
+    sys.stdout = Tee(sys.stdout, f)
+
+    #Read structures from database
+    categories = []
+    MgStructs = []
+    SiStructs = []
+    OxStructs = []
+    XMg = np.empty((0,20))
+    XSi = np.empty((0,20))
+    XOx = np.empty((0,20))
+    print('Number of atoms in each structure')
+    for base, dirs, files in os.walk('0_Database/QSelectedReduced/'):
+        for directories in dirs:
+            list_file = sorted(glob.glob(base+directories+"/*Q.trj"))
+            if len(list_file) == 0:
+                continue
+            MgStructs.append(np.empty((0,20)))
+            SiStructs.append(np.empty((0,20)))
+            OxStructs.append(np.empty((0,20)))
+            for input_file in list_file:
+                qmg, qsi, qox = readQ(input_file)
                 XMg = np.append(XMg, qmg, axis=0)
                 XSi = np.append(XSi, qsi, axis=0)
                 XOx = np.append(XOx, qox, axis=0)
                 MgStructs[-1] = np.append(MgStructs[-1], qmg, axis=0)
                 SiStructs[-1] = np.append(SiStructs[-1], qsi, axis=0)
                 OxStructs[-1] = np.append(OxStructs[-1], qox, axis=0)
-        print('Number of atoms in each structure')
-        print(directories)
-        print('Mg: ', MgStructs[-1].shape[0])
-        print('Si: ', SiStructs[-1].shape[0])
-        print('Ox: ', OxStructs[-1].shape[0])
-        print('------------------------------------')
-        #testStructure.append(readQ(list_file[0]))
-        categories.append(directories)
+            print(directories)
+            print('Mg: ', MgStructs[-1].shape[0])
+            print('Si: ', SiStructs[-1].shape[0])
+            print('Ox: ', OxStructs[-1].shape[0])
+            print('------------------------------------')
+            categories.append(directories)
 
+    #Find out number of clusters
+    param_grid = {"n_components": range(5, 10),}
+    grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
+    grid_seach.fit(XMg)
+    numClustersMg = grid_seach.best_params_['n_components']
+    grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
+    grid_seach.fit(XSi)
+    numClustersSi = grid_seach.best_params_['n_components']
+    grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
+    grid_seach.fit(XOx)
+    numClustersOx = grid_seach.best_params_['n_components']
+    print('Number of clusters used in each model: ')
+    print('Clusters Mg --- ', numClustersMg)
+    print('Clusters Si --- ', numClustersSi)
+    print('Clusters Ox --- ', numClustersOx)
+    print('--------------------------------')
 
-#Find out number of clusters
-grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
-grid_seach.fit(XMg)
-numClustersMg = grid_seach.best_params_['n_components']
-grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
-grid_seach.fit(XSi)
-numClustersSi = grid_seach.best_params_['n_components']
-grid_seach = GridSearchCV(GM(), param_grid=param_grid, scoring=gmm_bic_score)
-grid_seach.fit(XOx)
-numClustersOx = grid_seach.best_params_['n_components']
-print('Number of clusters used in each model: ')
-print('Mg --- ', numClustersMg)
-print('Si --- ', numClustersSi)
-print('Ox --- ', numClustersOx)
-print('--------------------------------')
+    print('Datapoints Mg: ', XMg.shape)
+    print('Datapoints Si: ', XSi.shape)
+    print('Datapoints Ox: ', XOx.shape)
+    print()
+    print('Categories: ', categories)
 
-print('Datapoints Mg: ', XMg.shape)
-print('Datapoints Si: ', XSi.shape)
-print('Datapoints Ox: ', XOx.shape)
-# print(len(testStructure[0]))
-
-#Creating and training the GM model
-dirModel = '0_GMModel/Cutoff/'
-modelMg = GM(numClustersMg, n_init=5)
-modelSi = GM(numClustersSi, n_init=5)
-modelOx = GM(numClustersOx, n_init=5)
-
-if not os.path.exists('0_GMModel/Cutoff/weightsMg.npy'):
+    #Creating and training the GM model
+    modelMg = GM(numClustersMg, n_init=100)
+    modelSi = GM(numClustersSi, n_init=100)
+    modelOx = GM(numClustersOx, n_init=100)
     modelMg.fit(XMg)
     modelSi.fit(XSi)
     modelOx.fit(XOx)
+
+
+    #Test and identify clusters
+    clusterIDsMg = ['']*numClustersMg
+    clusterIDsSi = ['']*numClustersSi
+    clusterIDsOx = ['']*numClustersOx
+    prevClustMg = np.zeros(numClustersMg)
+    prevClustSi = np.zeros(numClustersSi)
+    prevClustOx = np.zeros(numClustersOx)
+    for i in range(len(MgStructs)):
+        testProbsMg = modelMg.predict_proba(MgStructs[i])
+        testProbsSi = modelSi.predict_proba(SiStructs[i])
+        testProbsOx = modelOx.predict_proba(OxStructs[i])
+        aveProbMg = np.mean(testProbsMg, axis=0)
+        aveProbSi = np.mean(testProbsSi, axis=0)
+        aveProbOx = np.mean(testProbsOx, axis=0)
+        print('-----------------------')
+        print('Test structure: '+categories[i])
+        print('Probabilities Mg: ', aveProbMg)
+        for b in range(len(clusterIDsMg)):
+            if aveProbMg[b] > prevClustMg[b]:
+                clusterIDsMg[b] = categories[i]
+                prevClustMg[b] = aveProbMg[b]
+        print('Probabilities Si: ', aveProbSi)
+        for b in range(len(clusterIDsSi)):
+            if aveProbSi[b] > prevClustSi[b]:
+                clusterIDsSi[b] = categories[i]
+                prevClustSi[b] = aveProbSi[b]
+        print('Probabilities Ox: ', aveProbOx)
+        for b in range(len(clusterIDsOx)):
+            if aveProbOx[b] > prevClustOx[b]:
+                clusterIDsOx[b] = categories[i]
+                prevClustOx[b] = aveProbOx[b]
+
+    print('Identified clusters Mg: ', clusterIDsMg)
+    print('Identified clusters Si: ', clusterIDsSi)
+    print('Identified clusters Ox: ', clusterIDsOx)
+    for i in range(len(clusterIDsMg)):
+        if clusterIDsMg[i] == '':
+            print('Not all clusters have been recognized!')
+            exit()
+    for i in range(len(clusterIDsSi)):
+        if clusterIDsSi[i] == '':
+            print('Not all clusters have been recognized!')
+            exit()
+    for i in range(len(clusterIDsOx)):
+        if clusterIDsOx[i] == '':
+            print('Not all clusters have been recognized!')
+            exit()
+    print('All clusters have been properly recognized')
+
+    #Save successfully trained model
+    os.makedirs(dirModel, exist_ok=True)
+    np.savetxt(dirModel+'weightsMg.txt', modelMg.weights_)
+    np.savetxt(dirModel+'weightsSi.txt', modelSi.weights_)
+    np.savetxt(dirModel+'weightsOx.txt', modelOx.weights_)
+    np.savetxt(dirModel+'meansMg.txt', modelMg.means_)
+    np.savetxt(dirModel+'meansSi.txt', modelSi.means_)
+    np.savetxt(dirModel+'meansOx.txt', modelOx.means_)
+    np.savetxt(dirModel+'covariancesMg.txt', modelMg.covariances_.reshape(modelMg.covariances_.shape[0], -1))
+    np.savetxt(dirModel+'covariancesSi.txt', modelSi.covariances_.reshape(modelSi.covariances_.shape[0], -1))
+    np.savetxt(dirModel+'covariancesOx.txt', modelOx.covariances_.reshape(modelOx.covariances_.shape[0], -1))
+    sys.stdout = sys.__stdout__
 else:
-    meansMg = np.load(dirModel+'meansMg.npy')
-    meansSi = np.load(dirModel+'meansSi.npy')
-    meansOx = np.load(dirModel+'meansOx.npy')
-    covarMg = np.load(dirModel+'covariancesMg.npy')
-    covarSi = np.load(dirModel+'covariancesSi.npy')
-    covarOx = np.load(dirModel+'covariancesOx.npy')
+    #Get number of clusters
+    text_file = open(dirModel+"training.out", "r")
+    for line in text_file:
+        if re.search('Clusters Mg ---  ', line):
+            print(line)
+            numClustersMg = int(line.split('---  ')[1])
+        elif re.search('Clusters Si ---  ', line):
+            print(line)
+            numClustersSi = int(line.split('---  ')[1])
+        elif re.search('Clusters Ox ---  ', line):
+            print(line)
+            numClustersOx = int(line.split('---  ')[1])
+        elif re.search('Categories: ', line):
+            categories = line.split('[', 1)[1].split(']')[0].replace("'", "").split(', ')
+    text_file.close()
+    #Creating and load the GM model
+    modelMg = GM(numClustersMg, n_init=100)
+    modelSi = GM(numClustersSi, n_init=100)
+    modelOx = GM(numClustersOx, n_init=100)
+    meansMg = np.loadtxt(dirModel+'meansMg.txt')
+    meansSi = np.loadtxt(dirModel+'meansSi.txt')
+    meansOx = np.loadtxt(dirModel+'meansOx.txt')
+    covarMg = np.loadtxt(dirModel+'covariancesMg.txt').reshape(meansMg.shape[0], meansMg.shape[1], meansMg.shape[1])
+    covarSi = np.loadtxt(dirModel+'covariancesSi.txt').reshape(meansSi.shape[0], meansSi.shape[1], meansSi.shape[1])
+    covarOx = np.loadtxt(dirModel+'covariancesOx.txt').reshape(meansOx.shape[0], meansOx.shape[1], meansOx.shape[1])
     modelMg.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covarMg))
-    modelMg.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covarSi))
-    modelMg.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covarOx))
-    modelMg.weights_ = np.load(dirModel+'weightsMg.npy')
-    modelSi.weights_ = np.load(dirModel+'weightsSi.npy')
-    modelOx.weights_ = np.load(dirModel+'weightsOx.npy')
+    modelSi.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covarSi))
+    modelOx.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covarOx))
+    modelMg.weights_ = np.loadtxt(dirModel+'weightsMg.txt')
+    modelSi.weights_ = np.loadtxt(dirModel+'weightsSi.txt')
+    modelOx.weights_ = np.loadtxt(dirModel+'weightsOx.txt')
     modelMg.means_ = meansMg
     modelSi.means_ = meansSi
     modelOx.means_ = meansOx
@@ -148,72 +231,23 @@ else:
     modelSi.covariances_ = covarSi
     modelOx.covariances_ = covarOx
 
-#Test and identify clusters
-clusterIDsMg = ['']*numClustersMg
-clusterIDsSi = ['']*numClustersSi
-clusterIDsOx = ['']*numClustersOx
-prevClustMg = np.zeros(numClustersMg)
-prevClustSi = np.zeros(numClustersSi)
-prevClustOx = np.zeros(numClustersOx)
-for i in range(len(MgStructs)):
-    testProbsMg = modelMg.predict_proba(MgStructs[i])
-    testProbsSi = modelSi.predict_proba(SiStructs[i])
-    testProbsOx = modelOx.predict_proba(OxStructs[i])
-    aveProbMg = np.mean(testProbsMg, axis=0)
-    aveProbSi = np.mean(testProbsSi, axis=0)
-    aveProbOx = np.mean(testProbsOx, axis=0)
-    print('-----------------------')
-    print('Test structure: '+categories[i])
-    print('Probabilities Mg: ', aveProbMg)
-    for b in range(len(clusterIDsMg)):
-        if aveProbMg[b] > prevClustMg[b]:
-            clusterIDsMg[b] = categories[i]
-            prevClustMg[b] = aveProbMg[b]
-    #print('Max Prob Mg: '+str(np.max(aveProbMg))+'   Cluster: '+str(np.argmax(aveProbMg)))
-    # clusterIDsMg[np.argmax(aveProbMg)] = categories[i]
-    print('Probabilities Si: ', aveProbSi)
-    for b in range(len(clusterIDsSi)):
-        if aveProbSi[b] > prevClustSi[b]:
-            clusterIDsSi[b] = categories[i]
-            prevClustSi[b] = aveProbSi[b]
-    #print('Max Prob Si: '+str(np.max(aveProbSi))+'   Cluster: '+str(np.argmax(aveProbSi)))
-    # clusterIDsSi[np.argmax(aveProbSi)] = categories[i]
-    print('Probabilities Ox: ', aveProbOx)
-    for b in range(len(clusterIDsOx)):
-        if aveProbOx[b] > prevClustOx[b]:
-            clusterIDsOx[b] = categories[i]
-            prevClustOx[b] = aveProbOx[b]
-    #print('Max Prob Ox: '+str(np.max(aveProbOx))+'   Cluster: '+str(np.argmax(aveProbOx)))
-    # clusterIDsOx[np.argmax(aveProbOx)] = categories[i]
-
-print('Identified clusters Mg: ', clusterIDsMg)
-print('Identified clusters Si: ', clusterIDsSi)
-print('Identified clusters Ox: ', clusterIDsOx)
-for i in range(len(clusterIDsMg)):
-    if clusterIDsMg[i] == '':
-        print('Not all clusters have been recognized!')
-        exit()
-for i in range(len(clusterIDsSi)):
-    if clusterIDsSi[i] == '':
-        print('Not all clusters have been recognized!')
-        exit()
-for i in range(len(clusterIDsOx)):
-    if clusterIDsOx[i] == '':
-        print('Not all clusters have been recognized!')
-        exit()
-
-#Save successfully trained model
-if not os.path.exists('0_GMModel/Cutoff/weightsMg.npy'):
-    os.makedirs('0_GMModel/Cutoff/', exist_ok=True)
-    np.save(dirModel+'weightsMg.npy', modelMg.weights_, allow_pickle=False)
-    np.save(dirModel+'weightsSi.npy', modelSi.weights_, allow_pickle=False)
-    np.save(dirModel+'weightsOx.npy', modelOx.weights_, allow_pickle=False)
-    np.save(dirModel+'meansMg.npy', modelMg.means_, allow_pickle=False)
-    np.save(dirModel+'meansSi.npy', modelSi.means_, allow_pickle=False)
-    np.save(dirModel+'meansOx.npy', modelOx.means_, allow_pickle=False)
-    np.save(dirModel+'covariancesMg.npy', modelMg.covariances_, allow_pickle=False)
-    np.save(dirModel+'covariancesSi.npy', modelSi.covariances_, allow_pickle=False)
-    np.save(dirModel+'covariancesOx.npy', modelOx.covariances_, allow_pickle=False)
+    #Read clusters id's from training output
+    clusterIDsMg = ['']*numClustersMg
+    clusterIDsSi = ['']*numClustersSi
+    clusterIDsOx = ['']*numClustersOx
+    text_file = open(dirModel+"training.out", "r")
+    for line in text_file:
+        if re.search('Identified clusters Mg: ', line):
+            clusterIDsMg = line.split('[', 1)[1].split(']')[0].replace("'", "").split(', ')
+        elif re.search('Identified clusters Si: ', line):
+            clusterIDsSi = line.split('[', 1)[1].split(']')[0].replace("'", "").split(', ')
+        elif re.search('Identified clusters Ox: ', line):
+            clusterIDsOx = line.split('[', 1)[1].split(']')[0].replace("'", "").split(', ')
+    text_file.close()
+    print('Identified clusters Mg: ', clusterIDsMg)
+    print('Identified clusters Si: ', clusterIDsSi)
+    print('Identified clusters Ox: ', clusterIDsOx)
+    print()
 
 
 # Compute probabilities for each atom and write to output file
@@ -230,11 +264,6 @@ def computeProbabilityPerAtom(input_file):
     probsMg = modelMg.predict_proba(qmg)
     probsSi = modelSi.predict_proba(qsi)
     probsOx = modelOx.predict_proba(qox)
-    # try:
-    #     probs = model.predict_proba(q)
-    # except:
-    #     print('Error when predicting structures')
-    #     return
 
     # Start writing to output file
     os.system("head -n 8 "+input_file+"  > "+output_file)
@@ -293,7 +322,6 @@ def computeProbabilityPerAtom(input_file):
                 PatomString = ' '.join([str(prob[b]) for b in range(len(prob))])
                 b3 += 1
             fw.write("%g %g %g %g %g %g "%(pos[i,0],pos[i,1],pos[i,3],pos[i,4], pos[i,5], pos[i,6])+PatomString+"\n")
-    # print(input_file,np.mean(D_WRZ),np.mean(D_BCT),np.mean(D_MC),np.mean(D_SC))
 
 #Iterate through all files in Q directory
 list_file = sorted(glob.glob(inDir+'*/QValues/**/*.Q.trj', recursive=True))

@@ -76,7 +76,7 @@ for s in range(len(dataPoints)):
                 axs[i, b].scatter(dataPoints[s][key][:,i], dataPoints[s][key][:,b], label=key)
             # for s in range(len(testStructure)):
             #     axs[i, b].scatter(testStructure[s][:,i], testStructure[s][:,b], c='black', marker='x')
-            axs[i, b].legend()
+            #axs[i, b].legend()
             if i+1 < 21:
                 axs[i, b].set_xlabel('q'+str(i+1))
             else:
